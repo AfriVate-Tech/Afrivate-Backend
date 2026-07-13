@@ -171,7 +171,10 @@ class VerifyPasswordResetOtpView(generics.GenericAPIView):
         verification = serializer.validated_data['verification']
         user = serializer.validated_data['user']
 
-        verification.mark_verified()
+        # Rotate the verified OTP into a single-use reset token. The OTP itself
+        # is consumed here, and ResetPasswordView only accepts this token — so
+        # the reset is bound to this verified session, not just the user id.
+        reset_token = verification.issue_reset_token()
 
         logging.info(f"Password reset OTP verified for {user.email}")
 
@@ -179,6 +182,7 @@ class VerifyPasswordResetOtpView(generics.GenericAPIView):
             "success": True,
             "message": "OTP verified. You may now reset your password.",
             "uid": user.pk,
+            "token": reset_token,
         }, status=status.HTTP_200_OK)
 
 # password reset view
@@ -192,36 +196,40 @@ class ResetPasswordView(generics.GenericAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        uid = serializer.validated_data['uid']
+        token = serializer.validated_data['token']
         new_password = serializer.validated_data['new_password']
-        
-        try:
-            user = CustomUser.objects.get(pk=uid)
-        except CustomUser.DoesNotExist:
-            return Response(
-                {"error": "Invalid user."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
-        verified = EmailVerification.objects.filter(
-            user=user,
+        # The reset is authorized solely by the single-use token issued at OTP
+        # verification — never by uid, which is guessable.
+        verification = EmailVerification.objects.filter(
+            token=token,
             verification_type='password_reset',
             is_verified=True,
-        ).order_by('-created_at').first()
+        ).select_related('user').first()
 
-        if not verified:
+        if not verification or verification.user is None or verification.is_expired():
             return Response(
-                {"error": "OTP verification required before resetting password."},
+                {"error": "Invalid or expired reset token. Please restart the password reset process."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user.set_password(new_password)
-        # Setting is_email_verified=True here fixes the unverified-user catch-22:
-        # previously a user who had never verified their email could complete the
-        # password reset flow but still couldn't log in. Completing the reset OTP
-        # flow proves the user controls the inbox, so marking them verified is safe.
-        user.is_email_verified = True
-        user.save()
+        user = verification.user
+
+        with transaction.atomic():
+            user.set_password(new_password)
+            # Setting is_email_verified=True here fixes the unverified-user catch-22:
+            # previously a user who had never verified their email could complete the
+            # password reset flow but still couldn't log in. Completing the reset OTP
+            # flow proves the user controls the inbox, so marking them verified is safe.
+            user.is_email_verified = True
+            user.save()
+
+            # Consume every outstanding reset record for this user so neither
+            # this token nor any older pending OTP can be replayed.
+            EmailVerification.objects.filter(
+                user=user,
+                verification_type='password_reset',
+            ).delete()
 
         logging.info(f"Password reset successfully for {user.email}")
         return Response(

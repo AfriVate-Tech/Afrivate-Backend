@@ -22,6 +22,8 @@ class Opportunity(models.Model):
     # location = models.CharField(max_length=255, null=True, blank=True)  # e.g Remote, On-site
     posted_at = models.DateTimeField(auto_now_add=True)
     is_open = models.BooleanField(default=True,db_index=True)
+    # Optional applicant target set by the enabler; null means no target.
+    target_applicants = models.PositiveIntegerField(null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_opportunities')  # very important for permissions and filtering
 
     class Meta:

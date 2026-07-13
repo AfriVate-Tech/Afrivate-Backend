@@ -102,7 +102,8 @@ class ForgotPasswordSerializer(serializers.Serializer):
         
 
 class ResetPasswordSerializer(serializers.Serializer):
-    uid = serializers.IntegerField() # user.pk from verify-password-reset-otp response 
+    token = serializers.CharField(max_length=64)  # single-use reset token from verify-password-reset-otp
+    uid = serializers.IntegerField(required=False)  # legacy field — accepted but no longer used to authorize the reset
     new_password = serializers.CharField(write_only=True)
     confirm_password = serializers.CharField(write_only=True)
 

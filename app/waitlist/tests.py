@@ -120,52 +120,99 @@
 # # Run tests with:
 # # python manage.py test waitlist
 
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
-from unittest.mock import patch
-from user_database.models import WaitlistEmail
+from unittest.mock import patch, MagicMock
 
+from user_database.models import CustomUser
+from .models import WaitlistEmail
+
+
+TEST_CACHES = {
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+}
+
+
+def _stub_validated_email(email, **kwargs):
+    """Stand-in for email_validator so tests don't hit DNS."""
+    stub = MagicMock()
+    stub.normalized = email.lower().strip()
+    stub.domain = stub.normalized.split('@', 1)[1]
+    return stub
+
+
+@override_settings(CACHES=TEST_CACHES)
 class WaitlistEmailViewTests(APITestCase):
     def setUp(self):
-        self.url = reverse('accounts:waitlist-email')
+        self.url = reverse('waitlist:waitlist-index')
         self.valid_payload = {
-            "email": "test@example.com",
+            "email": "john.doe@gmail.com",
             "name": "John Doe"
         }
 
-    @patch('Authentication.views.send_waitlist_verification_email') 
-    def test_waitlist_signup_success(self, mock_send_email):
+    @patch('waitlist.serializers.validate_email_lib', side_effect=_stub_validated_email)
+    @patch('waitlist.views.send_welcome_email', return_value=True)
+    def test_waitlist_signup_success(self, mock_send_email, mock_validate):
         """Test successful waitlist signup and email trigger"""
-        
-        mock_send_email.return_return_value = True
-        
         response = self.client.post(self.url, self.valid_payload, format='json')
-        
-        # Assertions
+
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(WaitlistEmail.objects.count(), 1)
-        self.assertEqual(WaitlistEmail.objects.get().email, "test@example.com")
+        self.assertEqual(WaitlistEmail.objects.get().email, "john.doe@gmail.com")
         self.assertTrue(mock_send_email.called)
 
     def test_waitlist_signup_invalid_email(self):
         """Test signup fails with bad email format"""
         invalid_payload = {"email": "not-an-email", "name": "John"}
         response = self.client.post(self.url, invalid_payload, format='json')
-        
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('errors', response.data)
 
-    @patch('Authentication.views.send_waitlist_verification_email')
-    def test_email_send_failure(self, mock_send_email):
+    @patch('waitlist.serializers.validate_email_lib', side_effect=_stub_validated_email)
+    @patch('waitlist.views.send_welcome_email', return_value=False)
+    def test_email_send_failure(self, mock_send_email, mock_validate):
         """Test response when email service fails"""
-        mock_send_email.return_value = False # Simulate email failure
-        
         response = self.client.post(self.url, self.valid_payload, format='json')
-        
+
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertFalse(response.data['success'], False)
-        self.assertEqual(response.data['message'], 'Failed to send verification email. Please try again.')
+        self.assertFalse(response.data['success'])
+
+
+@override_settings(CACHES=TEST_CACHES)
+class WaitlistStatsPermissionTests(APITestCase):
+    """The stats endpoint is admin-only — regular and anonymous users get denied."""
+
+    def setUp(self):
+        self.url = reverse('waitlist:waitlist-stats')
+
+    def test_anonymous_user_denied(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_regular_user_denied(self):
+        user = CustomUser.objects.create_user(
+            username='jane', email='jane@example.com',
+            password='Pass123!', role='pathfinder',
+            is_email_verified=True,
+        )
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_user_allowed(self):
+        admin = CustomUser.objects.create_user(
+            username='boss', email='boss@example.com',
+            password='Pass123!', role='enabler',
+            is_email_verified=True, is_staff=True,
+        )
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertIn('total_signups', response.data['data'])
 
 
 # from django.utils import timezone
