@@ -135,6 +135,17 @@ class EmailVerification(models.Model):
         if self.is_verified:
             return False
         return timezone.now() < self.expires_at
+
+    def issue_reset_token(self, expiry_minutes=15):
+        """Consume a verified OTP by rotating this record into a single-use
+        password-reset token with its own short expiry window. The original
+        OTP is destroyed in the process, so it cannot be replayed."""
+        self.token = uuid.uuid4().hex
+        self.is_verified = True
+        self.verified_at = timezone.now()
+        self.expires_at = timezone.now() + timedelta(minutes=expiry_minutes)
+        self.save()
+        return self.token
     
     def mark_used(self):
         """Mark as used"""

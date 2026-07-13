@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from .serializers import WaitlistEmailSerializer, WaitlistStatsSerializer
 import logging
 
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAdminUser
 from .utils import send_welcome_email    
 
 
@@ -72,7 +72,7 @@ class WaitlistEmailView(generics.GenericAPIView):
 class WaitlistStatsView(generics.GenericAPIView):
     """Get waitlist statistics - Admin only"""
     serializer_class = WaitlistStatsSerializer
-    # permission_classes = [IsAdminUser]
+    permission_classes = [IsAdminUser]
 
     def get(self, request, *args, **kwargs):
         serializer = self.get_serializer()

@@ -6,16 +6,28 @@ from profiles.models import PathfinderProfileExtra
 class ApplicationSerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
     opportunity_title = serializers.ReadOnlyField(source='opportunity.title')
+    organization_name = serializers.SerializerMethodField()
     pathfinder_profile = serializers.SerializerMethodField()
     resume = SignedCloudinaryFileField(required=False, allow_null=True)
     profile_resume_url = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Application
         fields = ['id','user','user_name','pathfinder_profile',
-                'opportunity','opportunity_title', 'resume', 'profile_resume', 'profile_resume_url', 'status',
+                'opportunity','opportunity_title', 'organization_name', 'resume', 'profile_resume', 'profile_resume_url', 'status',
                     'cover_letter', 'applied_at', 'reviewed_at', ]
         read_only_fields = ['status', 'user', 'applied_at', 'reviewed_at']
+
+    def get_organization_name(self, obj):
+        # Org name of the enabler who posted the opportunity, falling back to
+        # their username (same convention as OpportunitySerializer).
+        try:
+            return obj.opportunity.created_by.profile.enabler_extra.name
+        except Exception:
+            try:
+                return obj.opportunity.created_by.username
+            except Exception:
+                return None
 
     def validate_opportunity(self, value):
         # Prevent double applications logic is handled by Meta unique_together, 
@@ -44,13 +56,22 @@ class ApplicationSerializer(serializers.ModelSerializer):
         if user.role != 'pathfinder':
             raise serializers.ValidationError("Only Pathfinders can apply for opportunities.")
         return data
-    
+
+    def validate_profile_resume(self, value):
+        # Ownership check: a credential can only be attached by the user it
+        # belongs to — otherwise any applicant could link (and leak the signed
+        # URL of) another user's private document.
+        if value is not None:
+            user = self.context['request'].user
+            if value.profile.user_id != user.id:
+                raise serializers.ValidationError("You can only attach your own profile documents.")
+        return value
+
     def get_profile_resume_url(self, obj):
         try:
             if obj.profile_resume and obj.profile_resume.document:
                 return obj.profile_resume.document.url
-        except Exception as e:
-            print(f"Resume URL error: {e}")
+        except Exception:
             return None
         return None
     

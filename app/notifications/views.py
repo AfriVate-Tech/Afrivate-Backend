@@ -3,6 +3,7 @@ from django.db.models import Exists, OuterRef, Q
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from .models import Notification
@@ -17,9 +18,22 @@ class NotificationViewSet(viewsets.ModelViewSet):
     serializer_class = NotificationSerializer
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        # Any authenticated user may create (perform_create restricts
+        # non-staff to addressed personal messages — no broadcasts).
+        if self.action in ['update', 'partial_update', 'destroy']:
             return [IsAdminUser()]
         return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.is_staff:
+            serializer.save()
+            return
+        # Non-staff (e.g. an enabler contacting an applicant) must address a
+        # specific recipient and can only send personal notifications.
+        if serializer.validated_data.get('recipient') is None:
+            raise ValidationError({"recipient": "A recipient is required."})
+        serializer.save(type='personal')
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
