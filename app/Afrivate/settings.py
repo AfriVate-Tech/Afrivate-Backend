@@ -16,9 +16,10 @@ from datetime import timedelta
 import  dj_database_url
 
 
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR.parent / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -92,6 +93,7 @@ INSTALLED_APPS = [
     'notifications',
     'applications',
     'opportunities',
+    'adminpanel',
 
     # allauth for social login
     'allauth',
@@ -263,6 +265,7 @@ REST_FRAMEWORK = {
         'auth_login':           '10/hour',
         'auth_otp_verify':      '10/hour',
         'auth_resend_otp':      '5/hour',
+        'admin_login':          '10/hour',
         'auth_forgot_password': '5/hour',
         'auth_password_reset':  '10/hour',
     },
@@ -299,6 +302,7 @@ SIMPLE_JWT = {
 # deployment) be added via Railway env vars without touching code.
 _CORS_ORIGINS_DEFAULT = [
     "http://localhost:3000",
+    "http://localhost:3001",  # admin dashboard dev server
     "https://afrivate-tech.github.io",
     "https://afrivate-backend-production.up.railway.app",
     "https://afrivate.org",

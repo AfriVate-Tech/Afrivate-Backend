@@ -17,6 +17,11 @@ class CustomUser(AbstractUser):
     )
     email = models.EmailField(unique=True, validators=[EmailValidator()], null=False, blank=False, db_index=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, blank=False, default='pathfinder', db_index=True)
+
+    # Set by the admin dashboard (suspend/reinstate). Suspension also flips
+    # is_active so the existing login check rejects the account; this flag
+    # distinguishes an admin suspension from other inactive states.
+    is_suspended = models.BooleanField(default=False, db_index=True)
     # bio = models.TextField(blank=True, null=True)
     
     # verifying email
