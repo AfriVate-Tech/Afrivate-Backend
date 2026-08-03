@@ -15,6 +15,9 @@ class Application(models.Model):
         ('pending', 'Pending'),
         ('accepted', 'Accepted'),
         ('rejected', 'Rejected'),
+        # An accepted engagement that has run its course — set from the admin
+        # dashboard (Admin Dashboard PRD 6.4) or future platform flow.
+        ('completed', 'Completed'),
     ]
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='applications')
